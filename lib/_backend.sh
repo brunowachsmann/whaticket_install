@@ -15,16 +15,16 @@ backend_redis_create() {
 
   sudo su - root <<EOF
   usermod -aG docker deploy
-  docker run --name redis-${instancia_add} -p ${redis_port}:6379 --restart always --detach redis redis-server --requirepass ${mysql_root_password}
-  
+  docker run --name redis-${instancia_add} -p ${redis_port}:6379 --restart always --detach redis redis-server --requirepass ${redis_pass}
+
   sleep 2
-  sudo su - postgres
-  createdb ${instancia_add};
-  psql
-  CREATE USER ${instancia_add} SUPERUSER INHERIT CREATEDB CREATEROLE;
-  ALTER USER ${instancia_add} PASSWORD '${mysql_root_password}';
-  \q
-  exit
+  sudo su - postgres <<EOF
+    createdb ${instancia_add};
+    psql
+    CREATE USER ${instancia_add} SUPERUSER INHERIT CREATEDB CREATEROLE;
+    ALTER USER ${instancia_add} PASSWORD '${db_pass}';
+    \q
+    exit
 EOF
 
 sleep 2
@@ -63,15 +63,15 @@ PORT=${backend_port}
 
 DB_HOST=localhost
 DB_DIALECT=postgres
-DB_USER=${instancia_add}
-DB_PASS=${mysql_root_password}
-DB_NAME=${instancia_add}
 DB_PORT=5432
+DB_USER=${instancia_add}
+DB_PASS=${db_pass}
+DB_NAME=${instancia_add}
 
 JWT_SECRET=${jwt_secret}
 JWT_REFRESH_SECRET=${jwt_refresh_secret}
 
-REDIS_URI=redis://:${mysql_root_password}@127.0.0.1:${redis_port}
+REDIS_URI=redis://:${redis_pass}@127.0.0.1:${redis_port}
 REDIS_OPT_LIMITER_MAX=1
 REGIS_OPT_LIMITER_DURATION=3000
 
@@ -79,11 +79,10 @@ USER_LIMIT=${max_user}
 CONNECTIONS_LIMIT=${max_whats}
 CLOSED_SEND_BY_ME=true
 
-GERENCIANET_SANDBOX=false
-GERENCIANET_CLIENT_ID=sua-id
-GERENCIANET_CLIENT_SECRET=sua_chave_secreta
-GERENCIANET_PIX_CERT=nome_do_certificado
-GERENCIANET_PIX_KEY=chave_pix_gerencianet
+#TRANSCRIÇÃO_DE_AUDIO_OPENAI
+OPENAI_API_KEY=suakey
+
+
 
 [-]EOF
 EOF
@@ -148,11 +147,12 @@ backend_update() {
   pm2 stop ${empresa_atualizar}-backend
   git pull
   cd /home/deploy/${empresa_atualizar}/backend
-  npm install
+  npm install --force
   npm update -f
   npm install @types/fs-extra
   rm -rf dist 
   npm run build
+  npx sequelize db:migrate
   npx sequelize db:migrate
   npx sequelize db:seed
   pm2 start ${empresa_atualizar}-backend
@@ -176,6 +176,7 @@ backend_db_migrate() {
 
   sudo su - deploy <<EOF
   cd /home/deploy/${instancia_add}/backend
+  npx sequelize db:migrate
   npx sequelize db:migrate
 EOF
 
@@ -215,9 +216,10 @@ backend_start_pm2() {
 
   sleep 2
 
-  sudo su - deploy <<EOF
+  sudo su - root <<EOF
   cd /home/deploy/${instancia_add}/backend
   pm2 start dist/server.js --name ${instancia_add}-backend
+  pm2 save --force
 EOF
 
   sleep 2
